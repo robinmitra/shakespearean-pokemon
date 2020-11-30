@@ -8,20 +8,22 @@ import (
 	"testing"
 )
 
-type mockPokemonService struct{}
+type mockPokemonService struct {
+	responses map[string]*Pokemon
+}
 
-var charizard = Pokemon{"Charizard", "Blah blah blah"}
-
-func (p mockPokemonService) Get(name string) *Pokemon {
-	if name == "charizard" {
-		return &charizard
+func (p *mockPokemonService) Get(name string) *Pokemon {
+	if pokemon, ok := p.responses[name]; ok {
+		return pokemon
 	}
 	return nil
 }
 
 func TestCanHandlePokemonRequest(t *testing.T) {
 	t.Run("when pokemon exists", func(t *testing.T) {
-		handler := PokemonHandler{&mockPokemonService{}}
+		charizard := Pokemon{"Charizard", "Blah blah blah"}
+		mock := mockPokemonService{responses: map[string]*Pokemon{"charizard": &charizard}}
+		handler := PokemonHandler{&mock}
 
 		req := httptest.NewRequest(http.MethodGet, "/pokemon/charizard", nil)
 		res := httptest.NewRecorder()

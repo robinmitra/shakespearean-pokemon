@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -17,13 +18,52 @@ func (e *HttpError) Error() string {
 }
 
 type PokemonFetcher interface {
-	Get(name string) *Pokemon
+	Get(name string) (*Pokemon, error)
 }
 
-type PokemonService struct{}
+type PokemonService struct {
+	baseUrl string
+}
 
-func (p *PokemonService) Get(name string) *Pokemon {
-	return &Pokemon{}
+func NewPokemonService() *PokemonService {
+	return &PokemonService{"https://pokeapi.co/api/v2/pokemon-species"}
+}
+
+func (p *PokemonService) Get(name string) (*Pokemon, error) {
+	res, err := http.Get(p.baseUrl + "/" + name)
+	if err != nil {
+		return nil, err
+	}
+	if res.Header.Get("Content-Type") != "application/json; charset=utf-8" {
+		return nil, nil
+	}
+	type ResJson struct {
+		Entries []struct {
+			Text     string `json:"flavor_text"`
+			Language struct {
+				Name string `json:"name"`
+			} `json:"language"`
+		} `json:"flavor_text_entries"`
+	}
+	var resJson ResJson
+	if err := json.NewDecoder(res.Body).Decode(&resJson); err != nil {
+		return nil, err
+	}
+	var pokemon Pokemon
+	for _, entry := range resJson.Entries {
+		if entry.Language.Name == "en" {
+			pokemon = Pokemon{
+				Name:        name,
+				Description: entry.Text,
+			}
+			break
+		}
+	}
+	if pokemon == (Pokemon{}) {
+		return nil, nil
+	}
+
+	return &pokemon, nil
 }
 
 type Pokemon struct {
@@ -68,7 +108,14 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := p.pokemonService.Get(character)
+	res, err := p.pokemonService.Get(character)
+	if err != nil {
+		response.Error(w, &HttpError{
+			fmt.Sprintf("Failed to fetch Pokemon - %v",
+				err.Error()), http.StatusNotFound,
+		})
+		return
+	}
 	if res == nil {
 		response.Error(w, &HttpError{"Not found", http.StatusNotFound})
 		return
@@ -77,7 +124,7 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	h := PokemonHandler{}
+	h := PokemonHandler{pokemonService: NewPokemonService()}
 	http.Handle("/pokemon/", &h)
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }

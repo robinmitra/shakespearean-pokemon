@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,11 +13,11 @@ type mockPokemonService struct {
 	responses map[string]*Pokemon
 }
 
-func (p *mockPokemonService) Get(name string) *Pokemon {
+func (p *mockPokemonService) Get(name string) (*Pokemon, error) {
 	if pokemon, ok := p.responses[name]; ok {
-		return pokemon
+		return pokemon, nil
 	}
-	return nil
+	return nil, nil
 }
 
 func TestCanHandlePokemonRequest(t *testing.T) {
@@ -92,4 +93,88 @@ func assertStatusCode(t *testing.T, actual, expected int) {
 	if actual != expected {
 		t.Errorf("Expected status to be %d, fount %d", expected, actual)
 	}
+}
+
+func TestCanFetchPokemon(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, r *http.Request) {
+		var res string
+		switch r.URL.Path {
+		case "/bulbasaur":
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			res = `
+			  {
+				"flavor_text_entries": [
+				  {
+					"flavor_text": "Lorem ipsum",
+					"language": { "name": "lo" }
+				  }
+				]
+			  }
+			`
+
+		case "/charizard":
+			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			res = `
+			  {
+				"flavor_text_entries": [
+				  {
+					"flavor_text": "Blah blah",
+					"language": { "name": "en" }
+				  },
+				  {
+					"flavor_text": "Lorem ipsum",
+					"language": { "name": "lo" }
+				  }
+				]
+			  }
+			`
+
+		default:
+			writer.Header().Set("Content-Type", "text/plain")
+			res = "Not Found"
+		}
+		if _, err := fmt.Fprint(writer, res); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer ts.Close()
+
+	service := NewPokemonService()
+	service.baseUrl = ts.URL
+
+	t.Run("when Pokemon exists", func(t *testing.T) {
+		pokemon, err := service.Get("charizard")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if pokemon.Name != "charizard" {
+			t.Errorf("Expected Pokemon name to be 'charizard', found '%v'", pokemon.Name)
+		}
+		if pokemon.Description != "Blah blah" {
+			t.Errorf("Expected Pokemon description to be 'Blah blah', found '%v'", pokemon.Description)
+		}
+	})
+
+	t.Run("when Pokemon does not exist", func(t *testing.T) {
+		pokemon, err := service.Get("superman")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if pokemon != nil {
+			t.Errorf("Expect Pokemon to be nil, found %v", pokemon)
+		}
+	})
+
+	t.Run("when Pokemon exists but not in English", func(t *testing.T) {
+		pokemon, err := service.Get("bulbasaur")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if pokemon != nil {
+			t.Errorf("Expect Pokemon to be nil, found %v", pokemon)
+		}
+	})
 }

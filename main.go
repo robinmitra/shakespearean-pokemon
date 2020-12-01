@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/robinmitra/shakespearean-pokemon/pokemon"
 	"log"
 	"net/http"
 	"strings"
@@ -18,57 +19,7 @@ func (e *HttpError) Error() string {
 }
 
 type PokemonFetcher interface {
-	Get(name string) (*Pokemon, error)
-}
-
-type PokemonService struct {
-	baseUrl string
-}
-
-func NewPokemonService() *PokemonService {
-	return &PokemonService{"https://pokeapi.co/api/v2/pokemon-species"}
-}
-
-func (p *PokemonService) Get(name string) (*Pokemon, error) {
-	res, err := http.Get(p.baseUrl + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if res.Header.Get("Content-Type") != "application/json; charset=utf-8" {
-		return nil, nil
-	}
-	type ResJson struct {
-		Entries []struct {
-			Text     string `json:"flavor_text"`
-			Language struct {
-				Name string `json:"name"`
-			} `json:"language"`
-		} `json:"flavor_text_entries"`
-	}
-	var resJson ResJson
-	if err := json.NewDecoder(res.Body).Decode(&resJson); err != nil {
-		return nil, err
-	}
-	var pokemon Pokemon
-	for _, entry := range resJson.Entries {
-		if entry.Language.Name == "en" {
-			pokemon = Pokemon{
-				Name:        name,
-				Description: entry.Text,
-			}
-			break
-		}
-	}
-	if pokemon == (Pokemon{}) {
-		return nil, nil
-	}
-
-	return &pokemon, nil
-}
-
-type Pokemon struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Get(name string) (*pokemon.Pokemon, error)
 }
 
 type PokemonHandler struct {
@@ -124,7 +75,7 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	h := PokemonHandler{pokemonService: NewPokemonService()}
+	h := PokemonHandler{pokemonService: pokemon.NewService()}
 	http.Handle("/pokemon/", &h)
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }

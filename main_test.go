@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"github.com/robinmitra/shakespearean-pokemon/pokemon"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -10,20 +10,20 @@ import (
 )
 
 type mockPokemonService struct {
-	responses map[string]*Pokemon
+	responses map[string]*pokemon.Pokemon
 }
 
-func (p *mockPokemonService) Get(name string) (*Pokemon, error) {
-	if pokemon, ok := p.responses[name]; ok {
-		return pokemon, nil
+func (p *mockPokemonService) Get(name string) (*pokemon.Pokemon, error) {
+	if p, ok := p.responses[name]; ok {
+		return p, nil
 	}
 	return nil, nil
 }
 
 func TestCanHandlePokemonRequest(t *testing.T) {
 	t.Run("when pokemon exists", func(t *testing.T) {
-		charizard := Pokemon{"Charizard", "Blah blah blah"}
-		mock := mockPokemonService{responses: map[string]*Pokemon{"charizard": &charizard}}
+		charizard := pokemon.Pokemon{Name: "Charizard", Description: "Blah blah blah"}
+		mock := mockPokemonService{responses: map[string]*pokemon.Pokemon{"charizard": &charizard}}
 		handler := PokemonHandler{&mock}
 
 		req := httptest.NewRequest(http.MethodGet, "/pokemon/charizard", nil)
@@ -31,12 +31,12 @@ func TestCanHandlePokemonRequest(t *testing.T) {
 
 		handler.ServeHTTP(res, req)
 
-		var pokemon Pokemon
-		if err := json.NewDecoder(res.Body).Decode(&pokemon); err != nil {
+		var p pokemon.Pokemon
+		if err := json.NewDecoder(res.Body).Decode(&p); err != nil {
 			t.Fatal(err)
 		}
 
-		if !reflect.DeepEqual(pokemon, charizard) {
+		if !reflect.DeepEqual(p, charizard) {
 			t.Errorf("Expected Pokemon to be Charizard")
 		}
 
@@ -93,88 +93,4 @@ func assertStatusCode(t *testing.T, actual, expected int) {
 	if actual != expected {
 		t.Errorf("Expected status to be %d, fount %d", expected, actual)
 	}
-}
-
-func TestCanFetchPokemon(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, r *http.Request) {
-		var res string
-		switch r.URL.Path {
-		case "/bulbasaur":
-			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-			res = `
-			  {
-				"flavor_text_entries": [
-				  {
-					"flavor_text": "Lorem ipsum",
-					"language": { "name": "lo" }
-				  }
-				]
-			  }
-			`
-
-		case "/charizard":
-			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-			res = `
-			  {
-				"flavor_text_entries": [
-				  {
-					"flavor_text": "Blah blah",
-					"language": { "name": "en" }
-				  },
-				  {
-					"flavor_text": "Lorem ipsum",
-					"language": { "name": "lo" }
-				  }
-				]
-			  }
-			`
-
-		default:
-			writer.Header().Set("Content-Type", "text/plain")
-			res = "Not Found"
-		}
-		if _, err := fmt.Fprint(writer, res); err != nil {
-			t.Fatal(err)
-		}
-	}))
-	defer ts.Close()
-
-	service := NewPokemonService()
-	service.baseUrl = ts.URL
-
-	t.Run("when Pokemon exists", func(t *testing.T) {
-		pokemon, err := service.Get("charizard")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if pokemon.Name != "charizard" {
-			t.Errorf("Expected Pokemon name to be 'charizard', found '%v'", pokemon.Name)
-		}
-		if pokemon.Description != "Blah blah" {
-			t.Errorf("Expected Pokemon description to be 'Blah blah', found '%v'", pokemon.Description)
-		}
-	})
-
-	t.Run("when Pokemon does not exist", func(t *testing.T) {
-		pokemon, err := service.Get("superman")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if pokemon != nil {
-			t.Errorf("Expect Pokemon to be nil, found %v", pokemon)
-		}
-	})
-
-	t.Run("when Pokemon exists but not in English", func(t *testing.T) {
-		pokemon, err := service.Get("bulbasaur")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if pokemon != nil {
-			t.Errorf("Expect Pokemon to be nil, found %v", pokemon)
-		}
-	})
 }

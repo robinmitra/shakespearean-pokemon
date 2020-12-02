@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+const port = 5000
+
 type PokemonFetcher interface {
 	Get(name string) (*pokemon.Pokemon, error)
 }
@@ -61,6 +63,8 @@ type PokemonHandler struct {
 }
 
 func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Received request: %v", r.URL.Path)
+
 	response := HttpResponse{}
 
 	character := strings.TrimPrefix(r.URL.Path, "/pokemon/")
@@ -96,7 +100,9 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	log.SetFlags(0)
+	log.Printf("Starting listening on http://localhost:%d", port)
 	h := PokemonHandler{pokemonService: pokemon.NewService(), shakespeareService: shakespeare.NewService()}
 	http.Handle("/pokemon/", &h)
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }

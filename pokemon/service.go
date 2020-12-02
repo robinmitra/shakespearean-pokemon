@@ -2,6 +2,7 @@ package pokemon
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 )
 
@@ -18,6 +19,11 @@ func (p *Service) Get(name string) (*Pokemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 	if res.Header.Get("Content-Type") != "application/json; charset=utf-8" {
 		return nil, nil
 	}

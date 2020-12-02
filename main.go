@@ -4,10 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/robinmitra/shakespearean-pokemon/pokemon"
+	"github.com/robinmitra/shakespearean-pokemon/shakespeare"
 	"log"
 	"net/http"
 	"strings"
 )
+
+type PokemonFetcher interface {
+	Get(name string) (*pokemon.Pokemon, error)
+}
+
+type ShakespeareTranslator interface {
+	Translate(name string) (string, error)
+}
 
 type HttpError struct {
 	Message string `json:"message"`
@@ -16,14 +25,6 @@ type HttpError struct {
 
 func (e *HttpError) Error() string {
 	return e.Message
-}
-
-type PokemonFetcher interface {
-	Get(name string) (*pokemon.Pokemon, error)
-}
-
-type PokemonHandler struct {
-	pokemonService PokemonFetcher
 }
 
 type HttpResponse struct{}
@@ -49,6 +50,16 @@ func (r HttpResponse) setHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
+type PokemonResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type PokemonHandler struct {
+	pokemonService     PokemonFetcher
+	shakespeareService ShakespeareTranslator
+}
+
 func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	response := HttpResponse{}
 
@@ -62,8 +73,8 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	res, err := p.pokemonService.Get(character)
 	if err != nil {
 		response.Error(w, &HttpError{
-			fmt.Sprintf("Failed to fetch Pokemon - %v",
-				err.Error()), http.StatusNotFound,
+			fmt.Sprintf("Failed to fetch Pokemon - %v", err.Error()),
+			http.StatusInternalServerError,
 		})
 		return
 	}
@@ -71,11 +82,21 @@ func (p *PokemonHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, &HttpError{"Not found", http.StatusNotFound})
 		return
 	}
-	response.Send(w, res)
+
+	td, err := p.shakespeareService.Translate(res.Description)
+	if err != nil {
+		response.Error(w, &HttpError{
+			fmt.Sprintf("Failed to translate - %v", err.Error()),
+			http.StatusInternalServerError,
+		})
+		return
+	}
+
+	response.Send(w, PokemonResponse{Name: res.Name, Description: td})
 }
 
 func main() {
-	h := PokemonHandler{pokemonService: pokemon.NewService()}
+	h := PokemonHandler{pokemonService: pokemon.NewService(), shakespeareService: shakespeare.NewService()}
 	http.Handle("/pokemon/", &h)
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }

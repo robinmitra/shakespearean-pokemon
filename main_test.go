@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/robinmitra/shakespearean-pokemon/pokemon"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 )
 
@@ -20,24 +20,44 @@ func (p *mockPokemonService) Get(name string) (*pokemon.Pokemon, error) {
 	return nil, nil
 }
 
+type mockShakespeareService struct {
+	responses map[string]string
+}
+
+func (s *mockShakespeareService) Translate(text string) (string, error) {
+	if t, ok := s.responses[text]; ok {
+		return t, nil
+	}
+	return "", errors.New("some error")
+}
+
 func TestCanHandlePokemonRequest(t *testing.T) {
 	t.Run("when pokemon exists", func(t *testing.T) {
-		charizard := pokemon.Pokemon{Name: "Charizard", Description: "Blah blah blah"}
-		mock := mockPokemonService{responses: map[string]*pokemon.Pokemon{"charizard": &charizard}}
-		handler := PokemonHandler{&mock}
+		charizard := pokemon.Pokemon{Name: "Charizard", Description: "Blah"}
+		mPokemonService := mockPokemonService{responses: map[string]*pokemon.Pokemon{"charizard": &charizard}}
+
+		translation := "Blah cough"
+		mShakespeareService := mockShakespeareService{responses: map[string]string{"Blah": translation}}
+
+		handler := PokemonHandler{&mPokemonService, &mShakespeareService}
 
 		req := httptest.NewRequest(http.MethodGet, "/pokemon/charizard", nil)
 		res := httptest.NewRecorder()
 
 		handler.ServeHTTP(res, req)
 
-		var p pokemon.Pokemon
-		if err := json.NewDecoder(res.Body).Decode(&p); err != nil {
+		var pr PokemonResponse
+
+		if err := json.NewDecoder(res.Body).Decode(&pr); err != nil {
 			t.Fatal(err)
 		}
 
-		if !reflect.DeepEqual(p, charizard) {
-			t.Errorf("Expected Pokemon to be Charizard")
+		if pr.Name != charizard.Name {
+			t.Errorf("Expected Pokemon name to be to be '%s', found '%s'", charizard.Name, pr.Name)
+		}
+
+		if pr.Description != translation {
+			t.Errorf("Expected translation to be '%s', found '%s'", translation, pr.Description)
 		}
 
 		assertContentType(t, res)
@@ -45,7 +65,7 @@ func TestCanHandlePokemonRequest(t *testing.T) {
 	})
 
 	t.Run("when pokemon does not exist", func(t *testing.T) {
-		handler := PokemonHandler{&mockPokemonService{}}
+		handler := PokemonHandler{&mockPokemonService{}, &mockShakespeareService{}}
 
 		req := httptest.NewRequest(http.MethodGet, "/pokemon/batman", nil)
 		res := httptest.NewRecorder()
@@ -62,7 +82,7 @@ func TestCanHandlePokemonRequest(t *testing.T) {
 	})
 
 	t.Run("when path is invalid", func(t *testing.T) {
-		handler := PokemonHandler{&mockPokemonService{}}
+		handler := PokemonHandler{&mockPokemonService{}, &mockShakespeareService{}}
 
 		req := httptest.NewRequest(http.MethodGet, "/pokemon/123/456", nil)
 		res := httptest.NewRecorder()
@@ -76,6 +96,26 @@ func TestCanHandlePokemonRequest(t *testing.T) {
 
 		assertContentType(t, res)
 		assertStatusCode(t, res.Code, http.StatusBadRequest)
+	})
+
+	t.Run("when translation fails", func(t *testing.T) {
+		charizard := pokemon.Pokemon{Name: "Charizard", Description: "Blah"}
+		mPokemonService := mockPokemonService{responses: map[string]*pokemon.Pokemon{"charizard": &charizard}}
+
+		handler := PokemonHandler{&mPokemonService, &mockShakespeareService{}}
+
+		req := httptest.NewRequest(http.MethodGet, "/pokemon/charizard", nil)
+		res := httptest.NewRecorder()
+
+		handler.ServeHTTP(res, req)
+
+		var httpErr HttpError
+		if err := json.NewDecoder(res.Body).Decode(&httpErr); err != nil {
+			t.Fatal(err)
+		}
+
+		assertContentType(t, res)
+		assertStatusCode(t, res.Code, http.StatusInternalServerError)
 	})
 }
 
